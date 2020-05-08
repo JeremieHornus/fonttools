@@ -5,7 +5,7 @@ from fontTools.pens.basePen import LoggingPen
 from fontTools.pens.transformPen import TransformPen
 from fontTools.ttLib.tables import ttProgram
 from fontTools.ttLib.tables._g_l_y_f import Glyph
-from fontTools.ttLib.tables._g_l_y_f import GlyphComponent
+from fontTools.ttLib.tables._g_l_y_f import GlyphComponent, GlyphDeepComponent
 from fontTools.ttLib.tables._g_l_y_f import GlyphCoordinates
 
 
@@ -40,6 +40,7 @@ class TTGlyphPen(LoggingPen):
         self.endPts = []
         self.types = []
         self.components = []
+        self.deepComponents = []
 
     def _addPoint(self, pt, onCurve):
         self.points.append(pt)
@@ -95,6 +96,36 @@ class TTGlyphPen(LoggingPen):
     def addComponent(self, glyphName, transformation):
         self.components.append((glyphName, transformation))
 
+    def addDeepComponent(self, glyphName, transformation):
+        self.deepComponents.append((glyphName, transformation))
+
+    def _buildDeepComponents(self, deepComponentFlags):
+        deepComponents = []
+        for glyphName, transformation in self.deepComponents:
+            if glyphName not in self.glyphSet:
+                self.log.warning(
+                    "skipped non-existing deepComponent '%s'", glyphName
+                )
+                continue
+            if self.points:
+                tpen = TransformPen(self, transformation)
+                self.glyphSet[glyphName].draw(tpen)
+                continue
+
+            deepComponent = GlyphdeepComponent()
+            deepComponent.glyphName = glyphName
+            deepComponent.x, deepComponent.y = (otRound(v) for v in transformation[4:])
+
+            transformation = tuple(
+                floatToFixedToFloat(v, 14) for v in transformation[:4]
+            )
+
+            deepComponent.transform = (transformation[:2], transformation[2:])
+
+            deepComponent.flags = deepComponentFlags
+            deepComponents.append(deepComponent)
+        return deepComponents
+
     def _buildComponents(self, componentFlags):
         if self.handleOverflowingTransforms:
             # we can't encode transform values > 2 or < -2 in F2Dot14,
@@ -135,10 +166,11 @@ class TTGlyphPen(LoggingPen):
             components.append(component)
         return components
 
-    def glyph(self, componentFlags=0x4):
+    def glyph(self, componentFlags=0x4, deepComponentFlags=0x4):
         assert self._isClosed(), "Didn't close last contour."
 
         components = self._buildComponents(componentFlags)
+        deepComponents = self._buildDeepComponents(deepComponentFlags)
 
         glyph = Glyph()
         glyph.coordinates = GlyphCoordinates(self.points)
@@ -150,6 +182,9 @@ class TTGlyphPen(LoggingPen):
         if components:
             glyph.components = components
             glyph.numberOfContours = -1
+        elif deepComponents:
+            glyph.deepComponents = deepComponents
+            glyph.numberOfContours = -2
         else:
             glyph.numberOfContours = len(glyph.endPtsOfContours)
             glyph.program = ttProgram.Program()

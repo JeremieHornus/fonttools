@@ -588,7 +588,7 @@ class Glyph(object):
 		if self.isComposite():
 			data = data + self.compileComponents(glyfTable)
 		elif self.isDeepComposite():
-			data = data + self.compileDeeepComponents(glyfTable)
+			data = data + self.compileDeepComponents(glyfTable)
 		else:
 			data = data + self.compileCoordinates()
 		return data
@@ -598,7 +598,7 @@ class Glyph(object):
 			for compo in self.components:
 				compo.toXML(writer, ttFont)
 			haveInstructions = hasattr(self, "program")
-		elif self.isDeeepComposite():
+		elif self.isDeepComposite():
 			for deepCompo in self.deepComponents:
 				deepCompo.toXML(writer, ttFont)
 			haveInstructions = hasattr(self, "program")
@@ -1229,7 +1229,11 @@ class Glyph(object):
 
 	def draw(self, pen, glyfTable, offset=0):
 
-		if self.isComposite():
+		if self.isDeepComposite():
+			for deepComponent in self.deepComponents:
+				glyphName, transform = deepComponent.getDeepComponentInfo()
+				pen.addDeepComponent(glyphName, transform)
+		elif self.isComposite():
 			for component in self.components:
 				glyphName, transform = component.getComponentInfo()
 				pen.addComponent(glyphName, transform)
@@ -1276,8 +1280,11 @@ class Glyph(object):
 		"""Draw the glyph using the supplied pointPen. Opposed to Glyph.draw(),
 		this will not change the point indices.
 		"""
-
-		if self.isComposite():
+		if self.isDeepComposite():
+			for deepComponent in self.deepComponents:
+				glyphName, transform = deepComponent.getComponentInfo()
+				pen.addDeepComponent(glyphName, transform)
+		elif self.isComposite():
 			for component in self.components:
 				glyphName, transform = component.getComponentInfo()
 				pen.addComponent(glyphName, transform)
@@ -1351,7 +1358,6 @@ class GlyphDeepComponent(object):
 
 			if flags & DC_HAS_ROTATE:
 				data = data + struct.pack(">h", transform[1])
-
 
 		glyphID = glyfTable.getGlyphID(self.glyphName)
 		return struct.pack(">HH", flags, glyphID) + data
