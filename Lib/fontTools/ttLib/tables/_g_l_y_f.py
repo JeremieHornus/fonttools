@@ -46,6 +46,8 @@ version = ".".join(version.split('.')[:2])
 #
 SCALE_COMPONENT_OFFSET_DEFAULT = 0   # 0 == MS, 1 == Apple
 
+sizeofDCs = [] 
+sizeofCGs = []
 
 class table__g_l_y_f(DefaultTable.DefaultTable):
 
@@ -94,9 +96,9 @@ class table__g_l_y_f(DefaultTable.DefaultTable):
 		currentLocation = 0
 		dataList = []
 		recalcBBoxes = ttFont.recalcBBoxes
-		for glyphName in self.glyphOrder:
+		for i, glyphName in enumerate(self.glyphOrder):
 			glyph = self.glyphs[glyphName]
-			glyphData = glyph.compile(self, recalcBBoxes)
+			glyphData = glyph.compile(self, i, recalcBBoxes)
 			if padding > 1:
 				glyphData = pad(glyphData, size=padding)
 			locations.append(currentLocation)
@@ -575,7 +577,7 @@ class Glyph(object):
 		else:
 			self.decompileCoordinates(data)
 
-	def compile(self, glyfTable, recalcBBoxes=True):
+	def compile(self, glyfTable, gid, recalcBBoxes=True):
 		if hasattr(self, "data"):
 			if recalcBBoxes:
 				# must unpack glyph in order to recalculate bounding box
@@ -591,6 +593,17 @@ class Glyph(object):
 			data = data + self.compileComponents(glyfTable)
 		elif self.isDeepComposite():
 			data = data + self.compileDeepComponents(glyfTable)
+
+			# Calculations for estimating file size
+			glyphName = glyfTable.getGlyphName(int(gid))
+			if glyphName.startswith('DC'):
+				sizeofDCs.append(len(self.compileDeepComponents(glyfTable)))
+				# print("average DC size", sum(sizeofDCs)/len(sizeofDCs))
+			elif glyphName.startswith('uni'):
+				sizeofCGs.append(len(self.compileDeepComponents(glyfTable)))
+				# print("average CharacterGlyph size", sum(sizeofCGs)/len(sizeofCGs))
+
+			
 		else:
 			data = data + self.compileCoordinates()
 		return data
@@ -859,6 +872,7 @@ class Glyph(object):
 				more = False
 			dc = self.deepComponents[i]
 			data = data + dc.compile(more, dc.nbCoord, glyfTable)
+
 		return data
 
 	def compileCoordinates(self):
@@ -1357,10 +1371,9 @@ class GlyphDeepComponent(object):
 
 	def compile(self, more, nbCoord, glyfTable):
 		data = b""
-
 		x = otRound(self.x)
 		y = otRound(self.y)
-		nbCoord =  struct.pack(">h", nbCoord)
+		
 		data = data + struct.pack(">hh", x, y)
 
 		data = data + struct.pack(">ff", fl2fifl(self.transform[0][0], 14), fl2fifl(self.transform[0][1], 14))
@@ -1368,6 +1381,11 @@ class GlyphDeepComponent(object):
 		data = data + struct.pack(">f", fl2fifl(self.transform[1],14))
 
 		for k, v in self.coord.items():
+			# if no value, do not store data
+			if v == 0: 
+				nbCoord -= 1
+				continue
+
 			tag = k[:8]
 			l = len(tag)
 			if len(tag) < 8:
@@ -1387,8 +1405,9 @@ class GlyphDeepComponent(object):
 
 		glyphID = glyfTable.getGlyphID(self.glyphName)
 		m = struct.pack(">?", more)
-		gid = struct.pack(">H", glyphID)
-		return m + gid + nbCoord + data
+		gid = struct.pack(">H", glyphID)		
+		b_nbCoord =  struct.pack(">h", nbCoord)
+		return m + gid + b_nbCoord + data
 
 	def decompile(self, data, glyfTable):
 		more = struct.unpack(">?", data[:1])[0]
