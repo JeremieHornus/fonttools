@@ -99,9 +99,6 @@ def test(glyphsets, glyphs=None, names=None):
 
 	hist = []
 	for glyph_name in glyphs:
-		#print()
-		#print(glyph_name)
-
 		try:
 			allVectors = []
 			for glyphset,name in zip(glyphsets, names):

@@ -13,6 +13,7 @@ from fontTools.misc.fixedTools import (
 	floatToFixed as fl2fi,
 	floatToFixedToStr as fl2str,
 	strToFixedToFloat as str2fl,
+	floatToFixedToFloat as fl2fifl,
 	otRound,
 )
 from numbers import Number
@@ -337,7 +338,7 @@ class table__g_l_y_f(DefaultTable.DefaultTable):
 				endPts=list(range(len(glyph.components))),
 				flags=None,
 				components=[c.glyphName for c in glyph.components],
-				deepComponents=[c.glyphName for c in glyph.deepComponents],
+				deepComponents=None,
 			)
 		elif glyph.isDeepComposite():
 			coords = GlyphCoordinates(
@@ -348,7 +349,7 @@ class table__g_l_y_f(DefaultTable.DefaultTable):
 				numberOfContours=glyph.numberOfContours,
 				endPts=list(range(len(glyph.deepComponents))),
 				flags=None,
-				components=[c.glyphName for c in glyph.deepComponents],
+				components=None,
 				deepComponents=[c.glyphName for c in glyph.deepComponents],
 			)
 		else:
@@ -359,6 +360,7 @@ class table__g_l_y_f(DefaultTable.DefaultTable):
 				endPts=endPts,
 				flags=flags,
 				components=None,
+				deepComponents=None,
 			)
 		# Add phantom points for (left, right, top, bottom) positions.
 		phantomPoints = self.getPhantomPoints(
@@ -599,9 +601,9 @@ class Glyph(object):
 				compo.toXML(writer, ttFont)
 			haveInstructions = hasattr(self, "program")
 		elif self.isDeepComposite():
+			haveInstructions = False
 			for deepCompo in self.deepComponents:
 				deepCompo.toXML(writer, ttFont)
-			haveInstructions = hasattr(self, "program")
 		else:
 			last = 0
 			for i in range(self.numberOfContours):
@@ -668,7 +670,7 @@ class Glyph(object):
 			component = GlyphComponent()
 			self.components.append(component)
 			component.fromXML(name, attrs, content, ttFont)
-		elif name == 'deepComponent':
+		elif name == 'deepComponents':
 			if self.numberOfContours > 0:
 				raise ttLib.TTLibError("can't mix composites and contours in glyph")
 			self.numberOfContours = -2
@@ -730,7 +732,12 @@ class Glyph(object):
 					len(data))
 
 	def decompileDeepComponents(self, data, glyfTable):
-		pass
+		self.deepComponents = []
+		more = True
+		while more:
+			deepComponent = GlyphDeepComponent()
+			more, data = deepComponent.decompile(data, glyfTable)
+			self.deepComponents.append(deepComponent)
 
 	def decompileCoordinates(self, data):
 		endPtsOfContours = array.array("h")
@@ -841,6 +848,17 @@ class Glyph(object):
 		if haveInstructions:
 			instructions = self.program.getBytecode()
 			data = data + struct.pack(">h", len(instructions)) + instructions
+		return data
+
+	def compileDeepComponents(self, glyfTable):
+		data = b""
+		lastdeepcomponent = len(self.deepComponents) - 1
+		more = True
+		for i in range(len(self.deepComponents)):
+			if i == lastdeepcomponent:
+				more = False
+			dc = self.deepComponents[i]
+			data = data + dc.compile(more, dc.nbCoord, glyfTable)
 		return data
 
 	def compileCoordinates(self):
@@ -1039,7 +1057,6 @@ class Glyph(object):
 			return self.numberOfContours == -1
 
 	def isDeepComposite(self):
-		"""Can be called on compact or expanded glyph."""
 		if hasattr(self, "data") and self.data:
 			return struct.unpack(">h", self.data[:2])[0] == -2
 		else:
@@ -1053,8 +1070,6 @@ class Glyph(object):
 	def getCoordinates(self, glyfTable):
 		if self.numberOfContours > 0:
 			return self.coordinates, self.endPtsOfContours, self.flags
-		elif self.isDeepComposite():
-			pass
 		elif self.isComposite():
 			# it's a composite
 			allCoords = GlyphCoordinates()
@@ -1231,8 +1246,8 @@ class Glyph(object):
 
 		if self.isDeepComposite():
 			for deepComponent in self.deepComponents:
-				glyphName, transform = deepComponent.getDeepComponentInfo()
-				pen.addDeepComponent(glyphName, transform)
+				glyphName, transform, coord = deepComponent.getDeepComponentInfo()
+				pen.addDeepComponent(glyphName, transform, coord)
 		elif self.isComposite():
 			for component in self.components:
 				glyphName, transform = component.getComponentInfo()
@@ -1282,8 +1297,8 @@ class Glyph(object):
 		"""
 		if self.isDeepComposite():
 			for deepComponent in self.deepComponents:
-				glyphName, transform = deepComponent.getComponentInfo()
-				pen.addDeepComponent(glyphName, transform)
+				glyphName, transform = deepComponent.getDeepComponentInfo()
+				pen.addDeepComponent(glyphName, transform, coord)
 		elif self.isComposite():
 			for component in self.components:
 				glyphName, transform = component.getComponentInfo()
@@ -1325,7 +1340,7 @@ class Glyph(object):
 class GlyphDeepComponent(object):
 
 	def __init__(self):
-		pass
+		self.nbCoord = 0
 
 	def getDeepComponentInfo(self):
 		"""Return the base glyph name, a transform (tuple of shift, scale, and rotate) as well as deepComponent interpolation coordinates."""
@@ -1334,60 +1349,82 @@ class GlyphDeepComponent(object):
 			trans = (self.x, self.y, scalex, scaley, rotate)
 		else:
 			trans = (self.x, self.y, 1, 1, 0)
-		return self.glyphName, trans
+		if hasattr(self, "coord"):
+			coord = self.coord
+		else:
+			coord = {}
+		return self.glyphName, trans, coord
 
-	def compile(self, more, haveInstructions, glyfTable):
+	def compile(self, more, nbCoord, glyfTable):
 		data = b""
-
-		flags = self.flags & (DC_HAS_SCALE | DC_HAS_X_Y_SCALE | DC_HAS_ROTATE)
-
-		if more:
-			flags = flags | DC_MORE
 
 		x = otRound(self.x)
 		y = otRound(self.y)
+		nbCoord =  struct.pack(">h", nbCoord)
 		data = data + struct.pack(">hh", x, y)
 
-		if hasattr(self, "transform"):
-			transform = [[fl2fi(x,14) for x in row] for row in self.transform]
-			
-			if flags & DC_HAS_SCALE:
-				data = data + struct.pack(">h", transform[0][0])
-			elif flags & DC_HAS_X_Y_SCALE:
-				data = data + struct.pack(">hh", transform[0][0], transform[0][1])
+		data = data + struct.pack(">ff", fl2fifl(self.transform[0][0], 14), fl2fifl(self.transform[0][1], 14))
 
-			if flags & DC_HAS_ROTATE:
-				data = data + struct.pack(">h", transform[1])
+		data = data + struct.pack(">f", fl2fifl(self.transform[1],14))
+
+		for k, v in self.coord.items():
+			tag = k[:8]
+			l = len(tag)
+			if len(tag) < 8:
+				tag = str(tag) + '0'*(8-len(tag))
+			
+			data = data + struct.pack("=8c", bytes(tag[:1], encoding='utf-8'),
+											bytes(tag[1:2], encoding='utf-8'),
+											bytes(tag[2:3], encoding='utf-8'),
+											bytes(tag[3:4], encoding='utf-8'),
+											bytes(tag[4:5], encoding='utf-8'),
+											bytes(tag[5:6], encoding='utf-8'),
+											bytes(tag[6:7], encoding='utf-8'),
+											bytes(tag[7:8], encoding='utf-8'))
+
+			data = data + struct.pack(">f", fl2fifl(v, 14))
+			
 
 		glyphID = glyfTable.getGlyphID(self.glyphName)
-		return struct.pack(">HH", flags, glyphID) + data
+		m = struct.pack(">?", more)
+		gid = struct.pack(">H", glyphID)
+		return m + gid + nbCoord + data
 
 	def decompile(self, data, glyfTable):
-		flags, glyphID = struct.unpack(">HH", data[:4])
-		self.flags = int(flags)
+		more = struct.unpack(">?", data[:1])[0]
+		data = data[1:]
+		glyphID = struct.unpack(">H", data[:2])[0]
+		data = data[2:]
 		glyphID = int(glyphID)
-		self.glyphName = glyfTable.getGlyphName(int(glyphID))
+		self.glyphName = glyfTable.getGlyphName(glyphID)
+		
+		nbCoord = struct.unpack(">h", data[:2])[0]
+		data = data[2:]
+
+		x, y = struct.unpack(">hh", data[:4])
+		self.x = x
+		self.y = y
 		data = data[4:]
 
-		if self.flags & DC_HAS_SCALE:
-			scale, = struct.unpack(">h", data[:2])
-			self.transform = [[fi2fl(scale,14), 0], [0, fi2fl(scale,14)]]
-			data = data[2:]
-		elif flags & DC_HAS_X_Y_SCALE:
-			scalex, scaley = struct.unpack(">hh", data[:4])
-			self.transform = [[fi2fl(scalex,14), 0], [0, fi2fl(scaley,14)]]
+		self.transform = []
+
+		scalex, scaley = struct.unpack(">ff", data[:8])
+		self.transform = [[fl2fifl(scalex,14), fl2fifl(scaley,14)]]
+		data = data[8:]
+
+		rotate = struct.unpack(">f", data[:4])[0]
+		self.transform.append(fl2fifl(rotate,14))
+		data = data[4:]
+
+		self.coord = {}
+		for i in list(range(nbCoord)):
+			k = struct.unpack("=8c", data[:8])
+			k = b''.join([c for c in k])
+			data = data[8:]
+			v = struct.unpack(">f", data[:4])[0]
+			self.coord[k.decode("utf-8")] = v
 			data = data[4:]
 
-		if flags & DC_HAS_ROTATE:
-			rotate = struct.unpack(">h", data[:2])
-			self.transform.append(fi2fl(rotate,14))
-			data = data[1:]
-		else:
-			self.transform.append(0)
-
-		more = self.flags & DC_MORE
-
-		flags = self.flags & (DC_HAS_SCALE | DC_HAS_X_Y_SCALE | DC_HAS_ROTATE)
 		return more, data
 
 	def toXML(self, writer, ttFont):
@@ -1397,33 +1434,37 @@ class GlyphDeepComponent(object):
 
 		if hasattr(self, "transform"):
 			transform = self.transform
-			if transform[0][0] == transform[0][1]:
-				attrs = attrs + [("scale", fl2str(transform[0][0], 14))]
-			else:
-				attrs = attrs + [("scalex", fl2str(transform[0][0], 14)),
+			attrs = attrs + [("scalex", fl2str(transform[0][0], 14)),
 								("scaley", fl2str(transform[0][1], 14))]
 
-			if transform[1]:
-				attrs = attrs + [("rotate", fl2str(transform[1], 14))]
+			
+			attrs = attrs + [("rotate", fl2str(transform[1], 14))]
 
-		attrs = attrs + [("flags", hex(self.flags))]
-		writer.simpletag("deepComponent", attrs)
+		writer.begintag("deepComponent", attrs)
+
+		if hasattr(self, "coord"):
+			for k, v in self.coord.items():
+				writer.newline()
+				coordAttrs = (("axis", k), ("value", fl2str(v, 14)))
+				writer.simpletag("coord", coordAttrs)
+		writer.newline()
+		writer.endtag("deepComponent")
 		writer.newline()
 
 	def fromXML(self, name, attrs, content, ttFont):
 		self.glyphName = attrs["glyphName"]
 
-		if "scale" in attrs:
-			scale = str2fl(attrs["scale"], 14)
-			self.transform = [scale]
-		elif "scalex" in attrs:
-			scalex = str2fl(attrs["scalex"], 14)
-			scaley = str2fl(attrs["scaley"], 14)
-			self.transform = [[scalex, scaley]]
+		# if "scale" in attrs:
+		# 	scale = str2fl(attrs["scale"], 14)
+		# 	self.transform = [scale]
+		# elif "scalex" in attrs:
+		scalex = str2fl(attrs["scalex"], 14)
+		scaley = str2fl(attrs["scaley"], 14)
+		self.transform = [[scalex, scaley]]
 
-		if "rotate" in attrs:
-			rotate = str2fl(attrs["rotate"], 14)
-			self.transform.append(rotate)
+		# if "rotate" in attrs:
+		rotate = str2fl(attrs["rotate"], 14)
+		self.transform.append(rotate)
 
 
 class GlyphComponent(object):

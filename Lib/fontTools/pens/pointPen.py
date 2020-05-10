@@ -221,6 +221,10 @@ class PointToSegmentPen(BasePointToSegmentPen):
 		del identifier  # unused
 		self.pen.addComponent(glyphName, transform)
 
+	def addDeepComponent(self, glyphName, transform, coord, identifier=None, **kwargs):
+		del identifier  # unused
+		self.pen.addDeepComponent(glyphName, transform, coord)
+
 
 class SegmentToPointPen(AbstractPen):
 	"""

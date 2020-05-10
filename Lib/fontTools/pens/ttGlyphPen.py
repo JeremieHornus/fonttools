@@ -96,33 +96,35 @@ class TTGlyphPen(LoggingPen):
     def addComponent(self, glyphName, transformation):
         self.components.append((glyphName, transformation))
 
-    def addDeepComponent(self, glyphName, transformation):
-        self.deepComponents.append((glyphName, transformation))
+    def addDeepComponent(self, glyphName, transformation, coord):
+        self.deepComponents.append((glyphName, transformation, coord))
 
     def _buildDeepComponents(self, deepComponentFlags):
         deepComponents = []
-        for glyphName, transformation in self.deepComponents:
-            if glyphName not in self.glyphSet:
-                self.log.warning(
-                    "skipped non-existing deepComponent '%s'", glyphName
-                )
-                continue
-            if self.points:
-                tpen = TransformPen(self, transformation)
-                self.glyphSet[glyphName].draw(tpen)
-                continue
+        for glyphName, transformation, coord in self.deepComponents:
+            # if glyphName not in self.glyphSet:
+            #     self.log.warning(
+            #         "skipped non-existing deepComponent '%s'", glyphName
+            #     )
+            #     continue
+            # if self.points:
+            #     tpen = TransformPen(self, transformation)
+            #     self.glyphSet[glyphName].draw(tpen)
+            #     continue
+            x, y, scalex, scaley, rotate = transformation
 
-            deepComponent = GlyphdeepComponent()
+            deepComponent = GlyphDeepComponent()
             deepComponent.glyphName = glyphName
-            deepComponent.x, deepComponent.y = (otRound(v) for v in transformation[4:])
+            deepComponent.x, deepComponent.y = (otRound(v) for v in [x, y])
 
-            transformation = tuple(
-                floatToFixedToFloat(v, 14) for v in transformation[:4]
-            )
+            # transformation = tuple(
+            #     floatToFixedToFloat(v, 14) for v in transformation[2:]
+            # )
 
-            deepComponent.transform = (transformation[:2], transformation[2:])
-
+            deepComponent.transform = [[floatToFixedToFloat(scalex, 14), floatToFixedToFloat(scaley, 14)], floatToFixedToFloat(rotate, 14)]
             deepComponent.flags = deepComponentFlags
+            deepComponent.coord = coord
+            deepComponent.nbCoord = len(coord)
             deepComponents.append(deepComponent)
         return deepComponents
 
@@ -166,18 +168,20 @@ class TTGlyphPen(LoggingPen):
             components.append(component)
         return components
 
-    def glyph(self, componentFlags=0x4, deepComponentFlags=0x4):
+    def glyph(self, componentFlags=0x4, deepComponentFlags=0x3):
+
         assert self._isClosed(), "Didn't close last contour."
 
         components = self._buildComponents(componentFlags)
         deepComponents = self._buildDeepComponents(deepComponentFlags)
-
         glyph = Glyph()
         glyph.coordinates = GlyphCoordinates(self.points)
         glyph.coordinates.toInt()
         glyph.endPtsOfContours = self.endPts
         glyph.flags = array("B", self.types)
         self.init()
+
+        # print('compo', components, 'deepCompo', deepComponents)
 
         if components:
             glyph.components = components
@@ -189,5 +193,4 @@ class TTGlyphPen(LoggingPen):
             glyph.numberOfContours = len(glyph.endPtsOfContours)
             glyph.program = ttProgram.Program()
             glyph.program.fromBytecode(b"")
-
         return glyph

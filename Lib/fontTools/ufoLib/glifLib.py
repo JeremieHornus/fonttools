@@ -34,6 +34,7 @@ from fontTools.ufoLib.validators import (
 from fontTools.misc import etree
 from fontTools.ufoLib import _UFOBaseIO
 from fontTools.ufoLib.utils import numberTypes
+from fontTools.ttLib.tables._g_l_y_f import GlyphDeepComponent
 
 
 __all__ = [
@@ -1052,6 +1053,27 @@ def _readLib(glyphObject, lib, validate):
 	assert len(lib) == 1
 	child = lib[0]
 	plist = plistlib.fromtree(child)
+
+	aegv = 'robocjk.atomicElement.glyphVariations'
+	dcae = 'robocjk.deepComponent.atomicElements'
+	cgdc = 'robocjk.characterGlyph.deepComponents'
+	dcgv = 'robocjk.deepComponent.glyphVariations'
+
+	for e in [dcae, cgdc]:
+		if e in plist:
+			for ae in plist[e]:
+				scalex = ae['scalex']
+				scaley = ae['scaley']
+				rotation = ae['rotation']
+				trans = [[scalex, scaley], rotation]
+				deepComponent = GlyphDeepComponent()
+				deepComponent.name = ae['name']
+				deepComponent.x = ae['x']
+				deepComponent.y = ae['y']
+				deepComponent.transform = trans
+				deepComponent.coord = ae['coord']
+
+				glyphObject.deepComponents.append(deepComponent)
 	if validate:
 		valid, message = glyphLibValidator(plist)
 		if not valid:
