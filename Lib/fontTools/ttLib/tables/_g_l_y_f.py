@@ -670,7 +670,7 @@ class Glyph(object):
 			component = GlyphComponent()
 			self.components.append(component)
 			component.fromXML(name, attrs, content, ttFont)
-		elif name == 'deepComponents':
+		elif name == "deepComponent":
 			if self.numberOfContours > 0:
 				raise ttLib.TTLibError("can't mix composites and contours in glyph")
 			self.numberOfContours = -2
@@ -1452,20 +1452,25 @@ class GlyphDeepComponent(object):
 		writer.newline()
 
 	def fromXML(self, name, attrs, content, ttFont):
-		self.glyphName = attrs["glyphName"]
+		if name == "deepComponent":
+			self.glyphName = attrs["glyphName"]
+			self.x = str2fl(attrs["x"], 14)
+			self.y = str2fl(attrs["y"], 14)
 
-		# if "scale" in attrs:
-		# 	scale = str2fl(attrs["scale"], 14)
-		# 	self.transform = [scale]
-		# elif "scalex" in attrs:
-		scalex = str2fl(attrs["scalex"], 14)
-		scaley = str2fl(attrs["scaley"], 14)
-		self.transform = [[scalex, scaley]]
+			scalex = str2fl(attrs["scalex"], 14)
+			scaley = str2fl(attrs["scaley"], 14)
+			self.transform = [[scalex, scaley]]
 
-		# if "rotate" in attrs:
-		rotate = str2fl(attrs["rotate"], 14)
-		self.transform.append(rotate)
-
+			rotate = str2fl(attrs["rotate"], 14)
+			self.transform.append(rotate)
+			if not hasattr(self, "coord"):
+				self.coord = {}
+			for element in content:
+				if not isinstance(element, tuple):
+					continue
+				name, attrs, content = element
+				if name == "coord":
+					self.coord[attrs["axis"]] = float(attrs["value"])
 
 class GlyphComponent(object):
 
