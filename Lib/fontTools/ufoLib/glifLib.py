@@ -1071,8 +1071,9 @@ def _readLib(glyphObject, lib, validate):
 				deepComponent.x = ae['x']
 				deepComponent.y = ae['y']
 				deepComponent.transform = trans
-				deepComponent.coord = ae['coord']
-
+				# Note: coord attribute should be a list of tuples not a dict
+				# RoboCJK needs updating
+				deepComponent.coord = [[i, v] for i, (k, v) in enumerate(ae['coord'].items())]
 				glyphObject.deepComponents.append(deepComponent)
 	if validate:
 		valid, message = glyphLibValidator(plist)

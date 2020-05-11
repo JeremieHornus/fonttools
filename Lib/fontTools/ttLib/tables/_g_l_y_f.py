@@ -48,6 +48,7 @@ SCALE_COMPONENT_OFFSET_DEFAULT = 0   # 0 == MS, 1 == Apple
 
 sizeofDCs = [] 
 sizeofCGs = []
+sizeofComp = []
 
 class table__g_l_y_f(DefaultTable.DefaultTable):
 
@@ -590,6 +591,8 @@ class Glyph(object):
 			self.recalcBounds(glyfTable)
 		data = sstruct.pack(glyphHeaderFormat, self)
 		if self.isComposite():
+			sizeofComp.append(len(self.compileComponents(glyfTable)))
+			# print("average Compo size", sum(sizeofComp)/len(sizeofComp))
 			data = data + self.compileComponents(glyfTable)
 		elif self.isDeepComposite():
 			data = data + self.compileDeepComponents(glyfTable)
@@ -872,7 +875,6 @@ class Glyph(object):
 				more = False
 			dc = self.deepComponents[i]
 			data = data + dc.compile(more, dc.nbCoord, glyfTable)
-
 		return data
 
 	def compileCoordinates(self):
@@ -1366,7 +1368,7 @@ class GlyphDeepComponent(object):
 		if hasattr(self, "coord"):
 			coord = self.coord
 		else:
-			coord = {}
+			coord = []
 		return self.glyphName, trans, coord
 
 	def compile(self, more, nbCoord, glyfTable):
@@ -1380,25 +1382,27 @@ class GlyphDeepComponent(object):
 
 		data = data + struct.pack(">f", fl2fifl(self.transform[1],14))
 
-		for k, v in self.coord.items():
+		for (k, v) in self.coord:
 			# if no value, do not store data
 			if v == 0: 
 				nbCoord -= 1
 				continue
-
-			tag = k[:8]
-			l = len(tag)
-			if len(tag) < 8:
-				tag = str(tag) + '0'*(8-len(tag))
 			
-			data = data + struct.pack("=8c", bytes(tag[:1], encoding='utf-8'),
-											bytes(tag[1:2], encoding='utf-8'),
-											bytes(tag[2:3], encoding='utf-8'),
-											bytes(tag[3:4], encoding='utf-8'),
-											bytes(tag[4:5], encoding='utf-8'),
-											bytes(tag[5:6], encoding='utf-8'),
-											bytes(tag[6:7], encoding='utf-8'),
-											bytes(tag[7:8], encoding='utf-8'))
+			data = data + struct.pack(">H", k)
+
+			# tag = k[:4]
+			# l = len(tag)
+			# if len(tag) < 4:
+			# 	tag = str(tag) + '0'*(4-len(tag))
+
+			# data = data + struct.pack("=4c", bytes(tag[:1], encoding='utf-8'),
+			# 								bytes(tag[1:2], encoding='utf-8'),
+			# 								bytes(tag[2:3], encoding='utf-8'),
+			# 								bytes(tag[3:4], encoding='utf-8'))#,
+											# bytes(tag[4:5], encoding='utf-8'),
+											# bytes(tag[5:6], encoding='utf-8'),
+											# bytes(tag[6:7], encoding='utf-8'),
+											# bytes(tag[7:8], encoding='utf-8'))
 
 			data = data + struct.pack(">f", fl2fifl(v, 14))
 			
@@ -1435,14 +1439,21 @@ class GlyphDeepComponent(object):
 		self.transform.append(fl2fifl(rotate,14))
 		data = data[4:]
 
-		self.coord = {}
+		self.coord = []
 		for i in list(range(nbCoord)):
-			k = struct.unpack("=8c", data[:8])
-			k = b''.join([c for c in k])
-			data = data[8:]
+			k = struct.unpack(">H", data[:2])[0]
+			data = data[2:]
 			v = struct.unpack(">f", data[:4])[0]
-			self.coord[k.decode("utf-8")] = v
+			self.coord.append([k, v])
 			data = data[4:]
+
+		# for i in list(range(nbCoord)):
+		# 	k = struct.unpack("=4c", data[:4])
+		# 	k = b''.join([c for c in k])
+		# 	data = data[4:]
+		# 	v = struct.unpack(">f", data[:4])[0]
+		# 	self.coord[k.decode("utf-8")] = v
+		# 	data = data[4:]
 
 		return more, data
 
@@ -1459,15 +1470,17 @@ class GlyphDeepComponent(object):
 			
 			attrs = attrs + [("rotate", fl2str(transform[1], 14))]
 
-		writer.begintag("deepComponent", attrs)
-
-		if hasattr(self, "coord"):
-			for k, v in self.coord.items():
+		if not self.coord:
+			writer.simpletag("deepComponent", attrs)
+		else:
+			writer.begintag("deepComponent", attrs)
+			for kv in self.coord:
+				k, v = kv
 				writer.newline()
 				coordAttrs = (("axis", k), ("value", fl2str(v, 14)))
 				writer.simpletag("coord", coordAttrs)
-		writer.newline()
-		writer.endtag("deepComponent")
+			writer.newline()
+			writer.endtag("deepComponent")
 		writer.newline()
 
 	def fromXML(self, name, attrs, content, ttFont):
@@ -1483,13 +1496,13 @@ class GlyphDeepComponent(object):
 			rotate = str2fl(attrs["rotate"], 14)
 			self.transform.append(rotate)
 			if not hasattr(self, "coord"):
-				self.coord = {}
+				self.coord = []
 			for element in content:
 				if not isinstance(element, tuple):
 					continue
 				name, attrs, content = element
 				if name == "coord":
-					self.coord[attrs["axis"]] = float(attrs["value"])
+					self.coord.append([int(attrs["axis"]), float(attrs["value"])])
 
 class GlyphComponent(object):
 
