@@ -19,7 +19,7 @@ import fs.osfs
 import fs.path
 from fontTools.misc.py23 import tobytes
 from fontTools.misc import plistlib
-from fontTools.pens.pointPen import AbstractPointPen, PointToSegmentPen
+from fontTools.pens.pointPen import AbstractPointPen, PointToSegmentPen, SegmentToPointPen
 from fontTools.ufoLib.errors import GlifLibError
 from fontTools.ufoLib.filenames import userNameToFileName
 from fontTools.ufoLib.validators import (
@@ -607,7 +607,10 @@ def _writeGlyphToBytes(
 			outline.text = "\n  "
 	# lib
 	if getattr(glyphObject, "lib", None):
-		_writeLib(glyphObject, root, validate)
+		empty = etree.Element("ignored")
+		pen = GLIFPointPen(empty, identifiers=identifiers, validate=validate)
+		drawPointsFunc(pen)
+		_writeLib(glyphObject, root, validate, pen)
 	# return the text
 	data = etree.tostring(
 		root, encoding="UTF-8", xml_declaration=True, pretty_print=True
@@ -779,7 +782,7 @@ def _writeAnchors(glyphObject, element, identifiers, validate):
 			identifiers.add(identifier)
 		etree.SubElement(element, "anchor", attrs)
 
-def _writeLib(glyphObject, element, validate):
+def _writeLib(glyphObject, element, validate, pen):
 	lib = getattr(glyphObject, "lib", None)
 	if not lib:
 		# don't write empty lib
@@ -790,6 +793,8 @@ def _writeLib(glyphObject, element, validate):
 			raise GlifLibError(message)
 	if not isinstance(lib, dict):
 		lib = dict(lib)
+	if len(pen.deepComponents) > 0:
+		lib["robocjk.deepComponents"] = pen.deepComponents 
 	# plist inside GLIF begins with 2 levels of indentation
 	e = plistlib.totree(lib, indent_level=2)
 	etree.SubElement(element, "lib").append(e)
@@ -1058,23 +1063,43 @@ def _readLib(glyphObject, lib, validate):
 	dcae = 'robocjk.deepComponent.atomicElements'
 	cgdc = 'robocjk.characterGlyph.deepComponents'
 	dcgv = 'robocjk.deepComponent.glyphVariations'
+	rdcs  = 'robocjk.deepComponents'
 
-	for e in [dcae, cgdc]:
-		if e in plist:
-			for ae in plist[e]:
-				scalex = ae['scalex']
-				scaley = ae['scaley']
-				rotation = ae['rotation']
-				trans = [[scalex, scaley], rotation]
-				deepComponent = GlyphDeepComponent()
-				deepComponent.name = ae['name']
-				deepComponent.x = ae['x']
-				deepComponent.y = ae['y']
-				deepComponent.transform = trans
-				# Note: coord attribute should be a list of tuples not a dict
-				# RoboCJK needs updating
-				deepComponent.coord = [[i, v] for i, (k, v) in enumerate(ae['coord'].items())]
-				glyphObject.deepComponents.append(deepComponent)
+	if rdcs in plist:
+		for dc in plist[rdcs]:
+			scalex = dc['scalex']
+			scaley = dc['scaley']
+			rotation = dc['rotation']
+			trans = [[scalex, scaley], rotation]
+			deepComponent = GlyphDeepComponent()
+			deepComponent.name = dc['name']
+			deepComponent.x = dc['x']
+			deepComponent.y = dc['y']
+			deepComponent.transform = trans
+			# Coords are now stored as lists in 'robocjk.deepComponents'
+			deepComponent.coord = dc['coord']
+			glyphObject.deepComponents.append(deepComponent)
+	else:
+		for e in [dcae, cgdc]:
+			if e in plist:
+				for dc in plist[e]:
+					scalex = dc['scalex']
+					scaley = dc['scaley']
+					rotation = dc['rotation']
+					trans = [[scalex, scaley], rotation]
+					deepComponent = GlyphDeepComponent()
+					deepComponent.name = dc['name']
+					deepComponent.x = dc['x']
+					deepComponent.y = dc['y']
+					deepComponent.transform = trans
+					# Note: coord attribute should be a list of tuples not a dict
+					# RoboCJK needs updating
+					deepComponent.coord = [[i, v] for i, (k, v) in enumerate(dc['coord'].items())]
+					glyphObject.deepComponents.append(deepComponent)
+
+	if aegv in plist:
+		glyphObject.glyphVariationLayers = [layerName for axisName, layerName in plist[aegv].items()]
+
 	if validate:
 		valid, message = glyphLibValidator(plist)
 		if not valid:
@@ -1545,6 +1570,7 @@ class GLIFPointPen(AbstractPointPen):
 		self.prevOffCurveCount = 0
 		self.prevPointTypes = []
 		self.validate = validate
+		self.deepComponents = []
 
 	def beginPath(self, identifier=None, **kwargs):
 		attrs = OrderedDict()
@@ -1635,6 +1661,20 @@ class GLIFPointPen(AbstractPointPen):
 			attrs["identifier"] = identifier
 			self.identifiers.add(identifier)
 		etree.SubElement(self.outline, "component", attrs)
+
+	# This goes into the glyph's lib
+	def addDeepComponent(self, glyphName, transformation, coord):
+		deepComponent = {}
+		x, y, scalex, scaley, rotation = transformation
+		deepComponent["name"] = glyphName
+		deepComponent["x"] = x
+		deepComponent["y"] = y
+		deepComponent["scalex"] = scalex
+		deepComponent["scaley"] = scaley
+		deepComponent["rotation"] = rotation
+		deepComponent["coord"] = coord
+		self.deepComponents.append(deepComponent)
+		
 
 if __name__ == "__main__":
 	import doctest

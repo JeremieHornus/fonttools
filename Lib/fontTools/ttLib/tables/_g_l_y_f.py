@@ -105,6 +105,12 @@ class table__g_l_y_f(DefaultTable.DefaultTable):
 			locations.append(currentLocation)
 			currentLocation = currentLocation + len(glyphData)
 			dataList.append(glyphData)
+
+			if hasattr(glyph, "variationGlyphs"):
+				print(glyphName, 'has variations')
+				if "dcvg" not in ttFont:
+					ttFont["dcvg"] = newTable('dcvg')
+
 		locations.append(currentLocation)
 
 		if padding == 1 and currentLocation < 0x20000:
@@ -579,6 +585,9 @@ class Glyph(object):
 			self.decompileCoordinates(data)
 
 	def compile(self, glyfTable, gid, recalcBBoxes=True):
+		if hasattr(self, "variationGlyphs"):
+			print(self.variationGlyphs)
+
 		if hasattr(self, "data"):
 			if recalcBBoxes:
 				# must unpack glyph in order to recalculate bounding box
@@ -596,7 +605,6 @@ class Glyph(object):
 			data = data + self.compileComponents(glyfTable)
 		elif self.isDeepComposite():
 			data = data + self.compileDeepComponents(glyfTable)
-
 			# Calculations for estimating file size
 			glyphName = glyfTable.getGlyphName(int(gid))
 			if glyphName.startswith('DC'):
@@ -605,8 +613,6 @@ class Glyph(object):
 			elif glyphName.startswith('uni'):
 				sizeofCGs.append(len(self.compileDeepComponents(glyfTable)))
 				# print("average CharacterGlyph size", sum(sizeofCGs)/len(sizeofCGs))
-
-			
 		else:
 			data = data + self.compileCoordinates()
 		return data
@@ -1568,7 +1574,6 @@ class GlyphComponent(object):
 
 	def compile(self, more, haveInstructions, glyfTable):
 		data = b""
-
 		# reset all flags we will calculate ourselves
 		flags = self.flags & (ROUND_XY_TO_GRID | USE_MY_METRICS |
 				SCALED_COMPONENT_OFFSET | UNSCALED_COMPONENT_OFFSET |

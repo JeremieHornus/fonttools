@@ -528,6 +528,7 @@ woff2GlyfTableFormat = """
 		flagStreamSize:           L  # Size of flag stream
 		glyphStreamSize:          L  # Size of glyph stream
 		compositeStreamSize:      L  # Size of composite stream
+		deepCmpositeStreamSize:   L  # Size of deepComposite stream
 		bboxStreamSize:           L  # Comnined size of bboxBitmap and bboxStream
 		instructionStreamSize:    L  # Size of instruction stream
 """
@@ -667,7 +668,7 @@ class WOFF2GlyfTable(getTableClass('glyf')):
 
 	subStreams = (
 		'nContourStream', 'nPointsStream', 'flagStream', 'glyphStream',
-		'compositeStream', 'bboxStream', 'instructionStream')
+		'compositeStream', 'deepCompositeStream', 'bboxStream', 'instructionStream')
 
 	def __init__(self, tag=None):
 		self.tableTag = Tag(tag or 'glyf')
@@ -735,6 +736,7 @@ class WOFF2GlyfTable(getTableClass('glyf')):
 		self.bboxBitmap = array.array('B', [0]*bboxBitmapSize)
 
 		for glyphID in range(self.numGlyphs):
+			print(glyphID)
 			self._encodeGlyph(glyphID)
 
 		self.bboxStream = self.bboxBitmap.tobytes() + self.bboxStream
@@ -756,6 +758,16 @@ class WOFF2GlyfTable(getTableClass('glyf')):
 			self._decodeCoordinates(glyph)
 		self._decodeBBox(glyphID, glyph)
 		return glyph
+
+	def _decodeDeepComponents(self, glyph):
+		data = self.deepCompositeStream
+		glyph.deepComponents = []
+		more = 1
+		while more:
+			deepComponent = getTableModule('glyf').GlyphDeepComponent()
+			more, data = deepComponent.decompile(data, self)
+			glyph.deepComponents.append(deepComponent)
+		self.deepCompositeStream = data
 
 	def _decodeComponents(self, glyph):
 		data = self.compositeStream
@@ -874,15 +886,27 @@ class WOFF2GlyfTable(getTableClass('glyf')):
 
 	def _encodeGlyph(self, glyphID):
 		glyphName = self.getGlyphName(glyphID)
+		print(glyphName)
 		glyph = self[glyphName]
 		self.nContourStream += struct.pack(">h", glyph.numberOfContours)
 		if glyph.numberOfContours == 0:
 			return
 		elif glyph.isComposite():
 			self._encodeComponents(glyph)
+		elif glyph.isDeepComposite():
+			self._encodeDeepComponents(glyph)
 		else:
 			self._encodeCoordinates(glyph)
 		self._encodeBBox(glyphID, glyph)
+
+	def _encodeDeepComponents(self, glyph):
+		lastdeepcomponent = len(glyph.deepComponents) - 1
+		more = 1
+		for i in range(len(glyph.deepComponents)):
+			if i == lastdeepcomponent:
+				more = 0
+			deepComponent = glyph.deepComponents[i]
+			self.deepCompositeStream += deepComponent.compile(more, self)
 
 	def _encodeComponents(self, glyph):
 		lastcomponent = len(glyph.components) - 1

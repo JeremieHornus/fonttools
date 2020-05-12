@@ -615,6 +615,7 @@ class TTFont(object):
 		for glyphID in range(len(glyphOrder)):
 			d[glyphOrder[glyphID]] = glyphID
 
+
 	def _writeTable(self, tag, writer, done, tableCache=None):
 		"""Internal helper function for self.save(). Keeps track of
 		inter-table dependencies.
