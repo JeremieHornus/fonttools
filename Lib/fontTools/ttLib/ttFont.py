@@ -200,6 +200,7 @@ class TTFont(object):
 			self['head']  # make sure 'head' is loaded so the recalculation is actually done
 
 		tags = list(self.keys())
+		print(tags)
 		if "GlyphOrder" in tags:
 			tags.remove("GlyphOrder")
 		numTables = len(tags)

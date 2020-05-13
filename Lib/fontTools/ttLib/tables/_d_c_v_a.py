@@ -5,6 +5,7 @@ from fontTools.misc.fixedTools import (
     floatToFixed as fl2fi,
     floatToFixedToStr as fl2str,
     strToFixedToFloat as str2fl,
+    floatToFixedToFloat as fl2fifl
 )
 from fontTools.ttLib import TTLibError
 from . import DefaultTable
@@ -13,79 +14,101 @@ import struct
 
 DCVA_AXIS_FORMAT = """
     > # big endian
-    more:           ?
-    axisNameID:     H
-    minValue:       f
-    maxValue:       f
+    more:?
+    axisNameID:H
+    minValue:f
+    maxValue:f
 """
 
 class table__d_c_v_a(DefaultTable.DefaultTable):
-    dependencies = ["name"]
+    dependencies = ["glyf"]
 
     def __init__(self, tag=None):
         DefaultTable.DefaultTable.__init__(self, tag)
-        self.glyphAxisCollections = []
 
     def compile(self, ttFont):
         data = b""
-        for glyphAxisCollection in self.glyphAxisCollections:
-            data = data + glyphAxisCollection.compile()
+        more = True
+        for i, glyphAxisCollection in enumerate(self.glyphAxisCollections):
+            if len(self.glyphAxisCollections) - i == 1:
+                more = False
+            data = data + glyphAxisCollection.compile(more)
         return data
 
     def decompile(self, data, ttFont):
         self.glyphAxisCollections = []
-        more = True
-        while more:
+        moreCollection = True
+        while moreCollection:
             glyphAxisCollection = GlyphAxisCollection()
-            more, data = glyphAxisCollection.decompile()
+            data, moreCollection, glyphID, axes = glyphAxisCollection.decompile(data)
+            glyphAxisCollection.glyphID = glyphID
+            glyphAxisCollection.axes = axes
+            self.glyphAxisCollections.append(glyphAxisCollection)
 
     def toXML(self, writer, ttFont):
+        writer.begintag("glyphVariationAxis")
+        writer.newline()
         for glyphAxisCollection in self.glyphAxisCollections:
             glyphAxisCollection.toXML(writer, ttFont)
+            writer.newline()
+        writer.endtag("glyphVariationAxis")
 
     def fromXML(self, name, attrs, content, ttFont):
+        self.glyphAxisCollections = []
         for element in content:
-            name, attrs, content = element
+            if not isinstance(element, tuple):
+                continue
+            name, attrs, contentAxes = element
             glyphAxisCollection = GlyphAxisCollection()
-            glyphAxisCollection.fromXML(name, attrs, content, ttFont)
+            glyphAxisCollection.fromXML(name, attrs, contentAxes, ttFont)
             self.glyphAxisCollections.append(glyphAxisCollection)
 
 class GlyphAxisCollection(object):
+    def __init__(self):
+        self.more = True
 
-    def compile(self):
+    def compile(self, more):
         data = b""
-        data = data + struct.pack(">H", self.glyphID)
-        for axis in self.axes:
-            data = data + axis.compile()
+        self.more = struct.pack(">?", more)
+        data = self.more + struct.pack(">H", self.glyphID)
+        moreAxis = True
+        for i, axis in enumerate(self.axes):
+            if len(self.axes) - i == 1:
+                moreAxis = False
+            axisData = axis.compile(moreAxis)
+            data += axisData
         return data
 
     def decompile(self, data):
-        moreGlyphAxisCollection = struct.unpack(">?", data[:1])[0]
+        moreCollection = struct.unpack(">?", data[:1])[0]
         data = data[1:]
         self.glyphID = struct.unpack(">H", data[:2])[0]
         data = data[2:]
 
         self.axes = []
-        more = True
-        while more:
+        moreAxis = True
+        while moreAxis:
             axis = Axis()
-            more, data = axis.decompile(data)
+            data, moreAxis, axisNameID, minValue, maxValue = axis.decompile(data)
+            axis.axisNameID = axisNameID
+            axis.minValue = minValue
+            axis.maxValue = maxValue
             self.axes.append(axis)
-        return moreGlyphAxisCollection, data
+        return data, moreCollection, self.glyphID, self.axes
 
     def toXML(self, writer, ttFont):
         glyphOrder = ttFont.getGlyphOrder()
-        attrs = ["glyph", ("glyphID", str(glyphOrder[self.glyphID]))]
-        writer.begintag("axes", attrs)
-        for axis in axes:
-            writer.newline()
-            axis.toXML(writer, ttFont)
+        name = "glyph"
+        attrs =  str(glyphOrder[self.glyphID])
+        writer.begintag("axes", glyph=attrs)
         writer.newline()
+        for axis in self.axes:
+            axis.toXML(writer, ttFont)
+            writer.newline()
         writer.endtag("axes")
 
     def fromXML(self, name, attrs, content, ttFont):
-        assert(name == "axes")
-        self.glyphID = attrs["glyph"]
+        self.glyphID = int(ttFont.getGlyphID(attrs["glyph"]))
         self.axes = []
         for element in content:
             if not isinstance(element, tuple):
@@ -96,33 +119,37 @@ class GlyphAxisCollection(object):
             self.axes.append(axis)
 
 class Axis(object):
+    def compile(self, more):
+        moreAxis = struct.pack(">?", more)
+        axisNameID = struct.pack(">H", self.axisNameID)
+        minValue = struct.pack(">f", fl2fifl(self.minValue,14))
+        maxValue = struct.pack(">f", fl2fifl(self.maxValue,14))
+        return moreAxis + axisNameID + minValue + maxValue
 
-    def compile(self):
-        return sstruct.pack(DCVA_AXIS_FORMAT, self)
-
-    def decompile(self):
+    def decompile(self, data):
         more = struct.unpack(">?", data[:1])[0]
         data = data[1:]
-        self.axisNameID = struct.unpack(">H", data[:2])
+        self.axisNameID = struct.unpack(">H", data[:2])[0]
         data = data[2:]
-        minValue = struct.unpack(">f", data[:4])
+        minValue = struct.unpack(">f", data[:4])[0]
         self.minValue = fl2fifl(minValue,14)
         data = data[4:]
-        maxValue = struct.unpack(">f", data[:4])
+        maxValue = struct.unpack(">f", data[:4])[0]
         self.maxValue = fl2fifl(maxValue,14)
         data = data[4:]
-        return more, data
+        return data, more, self.axisNameID, self.minValue, self.maxValue
 
     def toXML(self, writer, ttFont):
-        nameID = ("name", ttFont["name"].getDebugName(self.axisNameID))
-        minValue = ("MinValue", fl2str(self.minValue, 16))
-        maxValue = ("MaxValue", fl2str(self.maxValue, 16))
-        attrs = [nameID + minValue + maxValue]
+        nameID = ("nameID", self.axisNameID)
+        minValue = ("minValue", fl2str(self.minValue, 16))
+        maxValue = ("maxValue", fl2str(self.maxValue, 16))
+        attrs = (nameID,  minValue, maxValue)
         writer.simpletag("axis", attrs)
-        writer.newline()
 
     def fromXML(self, name, attrs, _content, ttFont):
         assert(name == "axis")
-        self.axisNameID = attrs["name"]
-        self.minValue = attrs['minValue']
-        self.maxValue = attrs['maxValue']
+        if not isinstance(attrs, tuple):
+            pass
+        self.axisNameID = int(attrs["nameID"])
+        self.minValue = fl2fifl(float(attrs['minValue']), 14)
+        self.maxValue = fl2fifl(float(attrs['maxValue']), 14)

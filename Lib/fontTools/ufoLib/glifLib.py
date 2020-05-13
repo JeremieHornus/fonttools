@@ -795,6 +795,10 @@ def _writeLib(glyphObject, element, validate, pen):
 		lib = dict(lib)
 	if len(pen.deepComponents) > 0:
 		lib["robocjk.deepComponents"] = pen.deepComponents 
+	if len(pen.variationGlyphs) > 0:
+		lib["robocjk.variationGlyphs"] = pen.variationGlyphs 
+	if len(pen.glyphVariationLayers) > 0:
+		lib["robocjk.glyphVariationLayers"] = pen.glyphVariationLayers
 	# plist inside GLIF begins with 2 levels of indentation
 	e = plistlib.totree(lib, indent_level=2)
 	etree.SubElement(element, "lib").append(e)
@@ -1064,6 +1068,7 @@ def _readLib(glyphObject, lib, validate):
 	cgdc = 'robocjk.characterGlyph.deepComponents'
 	dcgv = 'robocjk.deepComponent.glyphVariations'
 	rdcs  = 'robocjk.deepComponents'
+	rgvl  = 'robocjk.glyphVariationLayers'
 
 	if rdcs in plist:
 		for dc in plist[rdcs]:
@@ -1097,7 +1102,9 @@ def _readLib(glyphObject, lib, validate):
 					deepComponent.coord = [[i, v] for i, (k, v) in enumerate(dc['coord'].items())]
 					glyphObject.deepComponents.append(deepComponent)
 
-	if aegv in plist:
+	if rgvl in plist:
+		glyphObject.glyphVariationLayers = plist[rgvl]
+	elif aegv in plist:
 		glyphObject.glyphVariationLayers = [layerName for axisName, layerName in plist[aegv].items()]
 
 	if validate:
@@ -1571,6 +1578,8 @@ class GLIFPointPen(AbstractPointPen):
 		self.prevPointTypes = []
 		self.validate = validate
 		self.deepComponents = []
+		self.variationGlyphs = []
+		self.glyphVariationLayers = []
 
 	def beginPath(self, identifier=None, **kwargs):
 		attrs = OrderedDict()
@@ -1674,6 +1683,12 @@ class GLIFPointPen(AbstractPointPen):
 		deepComponent["rotation"] = rotation
 		deepComponent["coord"] = coord
 		self.deepComponents.append(deepComponent)
+
+	def addVariationGlyphs(self, variationGlyphs):
+		self.variationGlyphs = variationGlyphs
+
+	def addGlyphVariationLayers(self, glyphVariationLayers):
+		self.glyphVariationLayers = glyphVariationLayers
 		
 
 if __name__ == "__main__":

@@ -225,6 +225,11 @@ class PointToSegmentPen(BasePointToSegmentPen):
 		del identifier  # unused
 		self.pen.addDeepComponent(glyphName, transform, coord)
 
+	def addVariationGlyphs(self, variationGlyphs):
+		self.pen.variationGlyphs = variationGlyphs
+
+	def addGlyphVariationLayers(self, glyphVariationLayers):
+		self.pen.glyphVariationLayers = glyphVariationLayers
 
 class SegmentToPointPen(AbstractPen):
 	"""

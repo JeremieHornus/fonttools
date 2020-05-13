@@ -130,7 +130,10 @@ class RecordingPointPen(AbstractPointPen):
 		self.value.append(("endPath", (), {}))
 
 	def addPoint(self, pt, segmentType=None, smooth=False, name=None, **kwargs):
-		self.value.append(("addPoint", (pt, segmentType, smooth, name), kwargs))
+		d = {}
+		for k, v in kwargs.items():
+			d[k] = 'None' if not v else v
+		self.value.append(("addPoint", (pt, segmentType, smooth, name), d))
 
 	def addComponent(self, baseGlyphName, transformation, **kwargs):
 		self.value.append(("addComponent", (baseGlyphName, transformation), kwargs))
@@ -139,6 +142,33 @@ class RecordingPointPen(AbstractPointPen):
 		for operator, args, kwargs in self.value:
 			getattr(pointPen, operator)(*args, **kwargs)
 
+class RecordingPointPenCompact(AbstractPointPen):
+
+	def __init__(self):
+		self.value = []
+
+	def beginPath(self, **kwargs):
+		pass
+		# self.value.append(("beginPath"))
+
+	def endPath(self):
+		pass
+		# self.value.append(("endPath"))
+
+	def addPoint(self, pt, segmentType=None, smooth=False, name=None, **kwargs):
+		# self.value.append(("addPoint", (pt, segmentType, smooth)))
+		d = {"x":pt[0], "y":pt[1]}
+		if segmentType:
+			d["type"] = segmentType
+		self.value.append(("point", d))
+
+	def addComponent(self, baseGlyphName, transformation, **kwargs):
+		pass
+		#self.value.append(("addComponent", (baseGlyphName, transformation)))
+
+	def replay(self, pointPen):
+		for operator, args, kwargs in self.value:
+			getattr(pointPen, operator)(*args, **kwargs)
 
 if __name__ == "__main__":
 	from fontTools.pens.basePen import _TestPen

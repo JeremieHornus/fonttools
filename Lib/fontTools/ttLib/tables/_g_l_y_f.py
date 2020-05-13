@@ -19,6 +19,7 @@ from fontTools.misc.fixedTools import (
 from numbers import Number
 from . import DefaultTable
 from . import ttProgram
+from fontTools.ttLib.ttFont import *
 import sys
 import struct
 import array
@@ -26,6 +27,7 @@ import logging
 import os
 from fontTools.misc import xmlWriter
 from fontTools.misc.filenames import userNameToFileName
+
 
 log = logging.getLogger(__name__)
 
@@ -105,11 +107,6 @@ class table__g_l_y_f(DefaultTable.DefaultTable):
 			locations.append(currentLocation)
 			currentLocation = currentLocation + len(glyphData)
 			dataList.append(glyphData)
-
-			if hasattr(glyph, "variationGlyphs"):
-				print(glyphName, 'has variations')
-				if "dcvg" not in ttFont:
-					ttFont["dcvg"] = newTable('dcvg')
 
 		locations.append(currentLocation)
 
@@ -585,8 +582,11 @@ class Glyph(object):
 			self.decompileCoordinates(data)
 
 	def compile(self, glyfTable, gid, recalcBBoxes=True):
-		if hasattr(self, "variationGlyphs"):
-			print(self.variationGlyphs)
+		# if hasattr(self, "variationGlyphs"):
+		# 	print('variationGlyphs', self.variationGlyphs)
+
+		# if hasattr(self, "glyphVariationLayers"):
+		# 	print('glyphVariationLayers', self.glyphVariationLayers)
 
 		if hasattr(self, "data"):
 			if recalcBBoxes:
@@ -701,6 +701,9 @@ class Glyph(object):
 			deepComponent = GlyphDeepComponent()
 			self.deepComponents.append(deepComponent)
 			deepComponent.fromXML(name, attrs, content, ttFont)
+		elif name == "variationGlyphs":
+			print('varGlyph', name, content)
+			self.variationGlyphs = content
 		elif name == "instructions":
 			self.program = ttProgram.Program()
 			for element in content:
@@ -1265,7 +1268,6 @@ class Glyph(object):
 		self.trim (remove_hinting=True)
 
 	def draw(self, pen, glyfTable, offset=0):
-
 		if self.isDeepComposite():
 			for deepComponent in self.deepComponents:
 				glyphName, transform, coord = deepComponent.getDeepComponentInfo()
@@ -1275,6 +1277,11 @@ class Glyph(object):
 				glyphName, transform = component.getComponentInfo()
 				pen.addComponent(glyphName, transform)
 			return
+
+		if self.variationGlyphs:
+			pen.addVariationGlyphs(self.variationGlyphs)
+		if self.glyphVariationLayers:
+			pen.addGlyphVariationLayers(self.glyphVariationLayers)
 
 		coordinates, endPts, flags = self.getCoordinates(glyfTable)
 		if offset:
@@ -1327,6 +1334,8 @@ class Glyph(object):
 				pen.addComponent(glyphName, transform)
 			return
 
+		pen.addGlyphVariationLayers(self.glyphVariationLayers)
+		pen.addVariationGlyphs(self.variationGlyphs)
 		coordinates, endPts, flags = self.getCoordinates(glyfTable)
 		if offset:
 			coordinates = coordinates.copy()

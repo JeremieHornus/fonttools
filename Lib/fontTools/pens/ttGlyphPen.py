@@ -42,6 +42,7 @@ class TTGlyphPen(LoggingPen):
         self.components = []
         self.deepComponents = []
         self.variationGlyphs = []
+        self.glyphVariationLayers = []
 
     def _addPoint(self, pt, onCurve):
         self.points.append(pt)
@@ -100,8 +101,13 @@ class TTGlyphPen(LoggingPen):
     def addDeepComponent(self, glyphName, transformation, coord):
         self.deepComponents.append((glyphName, transformation, coord))
 
-    def addGlyphVariations(self, variationGlyphs: list):
+    def addVariationGlyphs(self, variationGlyphs: list):
+        print("add variationGlyphs")
         self.variationGlyphs = variationGlyphs
+
+    def addGlyphVariationLayers(self, glyphVariationLayers: list):
+        print("add glyph varlayers")
+        self.glyphVariationLayers = glyphVariationLayers
 
     def _buildDeepComponents(self, deepComponentFlags):
         deepComponents = []
@@ -176,17 +182,19 @@ class TTGlyphPen(LoggingPen):
 
         assert self._isClosed(), "Didn't close last contour."
         
-
+        
         components = self._buildComponents(componentFlags)
         deepComponents = self._buildDeepComponents(deepComponentFlags)
         glyph = Glyph()
+        glyph.glyphVariationLayers = self.glyphVariationLayers
+        glyph.variationGlyphs = self.variationGlyphs
         glyph.coordinates = GlyphCoordinates(self.points)
         glyph.coordinates.toInt()
         glyph.endPtsOfContours = self.endPts
         glyph.flags = array("B", self.types)
         self.init()
-        if self.variationGlyphs:
-            print("TTpen has variations", len(self.variationGlyphs))
+        if self.glyphVariationLayers:
+            print("TTpen has variations", len(self.glyphVariationLayers))
 
         # print(glyph.variationsGlyphs = 
         # variationsGlyphs = self._buildVariationGlyphs()
