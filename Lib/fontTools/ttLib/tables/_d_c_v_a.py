@@ -52,6 +52,7 @@ class table__d_c_v_a(DefaultTable.DefaultTable):
             glyphAxisCollection.toXML(writer, ttFont)
             writer.newline()
         writer.endtag("glyphVariationAxis")
+        writer.newline()
 
     def fromXML(self, name, attrs, content, ttFont):
         self.glyphAxisCollections = []

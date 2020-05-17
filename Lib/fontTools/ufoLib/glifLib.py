@@ -1106,6 +1106,9 @@ def _readLib(glyphObject, lib, validate):
 		glyphObject.glyphVariationLayers = plist[rgvl]
 	elif aegv in plist:
 		glyphObject.glyphVariationLayers = [layerName for axisName, layerName in plist[aegv].items()]
+	
+	if dcgv in plist:
+		glyphObject.glyphVariationLayers = [axisName for axisName in plist[dcgv].keys()]
 
 	if validate:
 		valid, message = glyphLibValidator(plist)
